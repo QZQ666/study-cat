@@ -1,5 +1,9 @@
 # 小猫陪学 · 三花猫“小花”版
 
+<p align="center">
+  <img src="docs/assets/calico-xiaohua.png" width="280" alt="三花猫小花：精细毛发、白橘黑花纹与桌面专注计时" />
+</p>
+
 一款 Windows 桌面专注学习计时器，让毛茸茸的三花猫“小花”陪你读 PDF、看课程和学习。点击开始后，小花出现在屏幕上，下方显示本次专注时间；可以自由拖动，主界面最小化后也会继续陪着你。
 
 **[下载三花猫新版 StudyCat-Calico.exe](https://github.com/QZQ666/study-cat/raw/refs/heads/main/StudyCat-Calico.exe)**
@@ -25,9 +29,13 @@
 
 猫咪素材已嵌入可执行文件，运行时无需另外下载图集。完整项目还包含源码、构建脚本、[素材与生成说明](assets/README.md)。
 
-![主界面](docs/assets/app.png)
+## 看看小花的表情与动作
 
-![专注时睡觉的小猫](docs/assets/cat.png)
+![三花猫小花的十二种姿态：眨眼、歪头、舔爪、蜷睡、翻肚皮、伸懒腰和打哈欠](docs/assets/calico-poses.png)
+
+## 三花猫新版界面
+
+![三花猫版主界面](docs/assets/calico-interface.png)
 
 ## 启动
 
