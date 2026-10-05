@@ -1,0 +1,9 @@
+data/
+.preview-data/
+startup-error.log
+/%SystemDrive%/
+/*preview*.png
+/StudyCat.build.exe
+*.pdb
+*.tmp
+*.log
