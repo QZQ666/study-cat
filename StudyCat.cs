@@ -16,34 +16,83 @@ using System.Windows.Media.Animation;
 namespace StudyCat {
  public static class CalicoAssets {
   public static string AssetDirectory = Directory.GetCurrentDirectory();
-  static BitmapSource[] frames;
+  static Dictionary<string,BitmapSource[]> cache = new Dictionary<string,BitmapSource[]>();
   public static BitmapSource Frame(int index) {
-   if (frames == null) Load();
-   if (index<0 || index>=12) throw new ArgumentOutOfRangeException("index");
-   return frames[index];
+   return Frame("calico",index);
   }
-  static void Load() {
-   Stream stream = typeof(CalicoAssets).Assembly.GetManifestResourceStream("StudyCat.CalicoAtlas");
-   if (stream == null) stream = File.OpenRead(Path.Combine(AssetDirectory,"assets","calico-atlas.png"));
+  public static string NormalizePet(string pet) { return pet=="ragdoll"?"ragdoll":"calico"; }
+  public static string PetName(string pet) { return NormalizePet(pet)=="ragdoll"?"团团":"小花"; }
+  public static BitmapSource Frame(string pet,int index) {
+   pet=NormalizePet(pet);
+   if (!cache.ContainsKey(pet)) Load(pet);
+   if (index<0 || index>=12) throw new ArgumentOutOfRangeException("index");
+   return cache[pet][index];
+  }
+  static void Load(string pet) {
+   bool ragdoll=pet=="ragdoll";
+   Stream stream = typeof(CalicoAssets).Assembly.GetManifestResourceStream(ragdoll?"StudyCat.RagdollAtlas":"StudyCat.CalicoAtlas");
+   if (stream == null) stream = File.OpenRead(Path.Combine(AssetDirectory,"assets",ragdoll?"ragdoll-atlas.png":"calico-atlas.png"));
    BitmapImage atlas = new BitmapImage();
    using (stream) { atlas.BeginInit(); atlas.CacheOption = BitmapCacheOption.OnLoad; atlas.StreamSource = stream; atlas.EndInit(); atlas.Freeze(); }
    // The illustrated sheet has taller sitting/stretching rows and a shorter sleeping row.
    int[] rows = {0,(int)(atlas.PixelHeight*0.38),(int)(atlas.PixelHeight*0.652),atlas.PixelHeight};
-   frames = new BitmapSource[12];
+   var frames = new BitmapSource[12];
    for(int i=0;i<12;i++) {
     int col=i%4,row=i/4,x=col*atlas.PixelWidth/4,right=(col+1)*atlas.PixelWidth/4;
+    if(ragdoll) {
+     double[] columns=row==0?new double[] {0,0.264,0.514,0.762,1}:row==1?new double[] {0,0.265,0.505,0.77,1}:new double[] {0,0.281,0.491,0.777,1};
+     x=(int)(atlas.PixelWidth*columns[col]); right=(int)(atlas.PixelWidth*columns[col+1]);
+    }
     int top=rows[row],bottom=rows[row+1];
-    if(row==1 && col==0) bottom=(int)(atlas.PixelHeight*0.625);
-    if(row==2 && col==0) top=(int)(atlas.PixelHeight*0.625);
+    if(!ragdoll && row==1 && col==0) bottom=(int)(atlas.PixelHeight*0.625);
+    if(!ragdoll && row==2 && col==0) top=(int)(atlas.PixelHeight*0.625);
+    if(ragdoll && row==1 && col==0) bottom=(int)(atlas.PixelHeight*0.618);
+    if(ragdoll && row==2 && col==0) top=(int)(atlas.PixelHeight*0.618);
     var tile = new CroppedBitmap(atlas,new Int32Rect(x,top,right-x,bottom-top));
     var rgba = new FormatConvertedBitmap(tile,PixelFormats.Bgra32,null,0);
     int width=rgba.PixelWidth,height=rgba.PixelHeight,stride=width*4; var pixels=new byte[stride*height]; rgba.CopyPixels(pixels,stride,0);
+    BitmapSource spriteSource=tile;
+    if(ragdoll) {
+     // Extract one animal per atlas cell; reject disconnected matte debris.
+     IsolateSprite(pixels,width,height);
+     spriteSource=BitmapSource.Create(width,height,96,96,PixelFormats.Bgra32,null,pixels,stride);spriteSource.Freeze();
+    }
     int minX=width,minY=height,maxX=0,maxY=0;
     for(int py=0;py<height;py++) for(int px=0;px<width;px++) if(pixels[py*stride+px*4+3]>24) {minX=Math.Min(minX,px); minY=Math.Min(minY,py); maxX=Math.Max(maxX,px); maxY=Math.Max(maxY,py);}
-    if(minX>maxX) throw new InvalidDataException("Calico pose is empty: "+i);
+    if(minX>maxX) throw new InvalidDataException("Pet pose is empty: "+pet+" "+i);
     minX=Math.Max(0,minX-4);minY=Math.Max(0,minY-4);maxX=Math.Min(width-1,maxX+4);maxY=Math.Min(height-1,maxY+4);
-    var frame = new CroppedBitmap(tile,new Int32Rect(minX,minY,maxX-minX+1,maxY-minY+1)); frame.Freeze(); frames[i]=frame;
+    var frame = new CroppedBitmap(spriteSource,new Int32Rect(minX,minY,maxX-minX+1,maxY-minY+1)); frame.Freeze(); frames[i]=frame;
    }
+   cache[pet]=frames;
+  }
+  static void IsolateSprite(byte[] pixels,int width,int height) {
+   int count=width*height; var eligible=new bool[count];var visited=new bool[count];var keep=new bool[count];var queue=new int[count];int largest=0;
+   for(int i=0;i<count;i++) {
+    int p=i*4,b=pixels[p],g=pixels[p+1],r=pixels[p+2];
+    bool matte=(r>=252 && g>=252 && b>=252) || (r>210 && g<80 && b<110) || (r>230 && g>215 && b<90);
+    eligible[i]=pixels[p+3]>24 && !matte;
+   }
+   for(int start=0;start<count;start++) {
+    if(!eligible[start] || visited[start]) continue;
+    int head=0,tail=1;queue[0]=start;visited[start]=true;
+    while(head<tail) {
+     int current=queue[head++],x=current%width,y=current/width;
+     for(int dy=-1;dy<=1;dy++) for(int dx=-1;dx<=1;dx++) {
+      int nx=x+dx,ny=y+dy;if(nx<0 || nx>=width || ny<0 || ny>=height) continue;
+      int next=ny*width+nx;if(eligible[next] && !visited[next]) {visited[next]=true;queue[tail++]=next;}
+     }
+    }
+    if(tail>largest) {largest=tail;Array.Clear(keep,0,count);for(int j=0;j<tail;j++) keep[queue[j]]=true;}
+   }
+   // Preserve white highlights inside the animal rather than punching holes in white fur.
+   Array.Clear(visited,0,count);int outsideHead=0,outsideTail=0;
+   for(int i=0;i<count;i++) if((i<width || i>=count-width || i%width==0 || i%width==width-1) && !keep[i]) {visited[i]=true;queue[outsideTail++]=i;}
+   while(outsideHead<outsideTail) {
+    int current=queue[outsideHead++],x=current%width,y=current/width;
+    int[] neighbors={x>0?current-1:-1,x<width-1?current+1:-1,y>0?current-width:-1,y<height-1?current+width:-1};
+    foreach(int next in neighbors) if(next>=0 && !keep[next] && !visited[next]) {visited[next]=true;queue[outsideTail++]=next;}
+   }
+   for(int i=0;i<count;i++) if(!keep[i] && visited[i]) pixels[i*4+3]=0;
   }
  }
  public static class CatBrand {
@@ -74,6 +123,7 @@ namespace StudyCat {
   public int IdleSeconds = 90;
   public double CatLeft = Double.NaN;
   public double CatTop = Double.NaN;
+  public string PetId = "calico";
  }
  public class Counter {
   public Journal Data;
@@ -167,6 +217,8 @@ namespace StudyCat {
   TextBlock status, today, session, split, note;
   Button start, pin;
   RadioButton readMode, videoMode;
+  RadioButton petCalico, petRagdoll;
+  Image titleIcon;
   System.Windows.Controls.Primitives.UniformGrid thresholdPanel;
   ListBox history;
   CatAnimation catAnimation;
@@ -181,6 +233,7 @@ namespace StudyCat {
    <Grid x:Name='TitleBar' Background='Transparent'><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width='Auto'/></Grid.ColumnDefinitions><StackPanel Orientation='Horizontal' VerticalAlignment='Center'><Image x:Name='TitleIcon' Width='36' Height='36' Margin='0,0,9,0'/><StackPanel><TextBlock Text='小猫陪学' FontSize='20' FontWeight='Bold'/><TextBlock Text='陪你慢慢积累每一点专注' FontSize='10' Foreground='#A08B7D' Margin='0,3,0,0'/></StackPanel></StackPanel><StackPanel Grid.Column='1' Orientation='Horizontal' VerticalAlignment='Center'><Button x:Name='Pin' Content='置顶' Padding='9,8' FontSize='11'/><Button x:Name='Minimize' Content='—' Padding='9,5' FontSize='15' ToolTip='最小化'/><Button x:Name='Maximize' Content='□' Padding='9,5' FontSize='15' ToolTip='最大化或还原'/><Button x:Name='CloseWindow' Content='×' Padding='10,3' FontSize='19' Background='#F5DFD7' ToolTip='关闭并结束学习'/></StackPanel></Grid>
    <Border Grid.Row='1' Background='#F5EDE4' CornerRadius='26' Margin='0,20,0,14' Padding='8,8,8,16'>
     <StackPanel>
+     <UniformGrid Columns='2' Margin='3,0,3,6'><RadioButton x:Name='PetCalico' GroupName='Pet' Tag='calico' Padding='8,7'><StackPanel Orientation='Horizontal'><Image x:Name='CalicoThumb' Width='30' Height='34' Margin='0,0,7,0'/><StackPanel VerticalAlignment='Center'><TextBlock Text='小花' FontWeight='SemiBold'/><TextBlock Text='温柔三花猫' FontSize='10'/></StackPanel></StackPanel></RadioButton><RadioButton x:Name='PetRagdoll' GroupName='Pet' Tag='ragdoll' Padding='8,7'><StackPanel Orientation='Horizontal'><Image x:Name='RagdollThumb' Width='30' Height='34' Margin='0,0,7,0'/><StackPanel VerticalAlignment='Center'><TextBlock Text='团团' FontWeight='SemiBold'/><TextBlock Text='蓝眼布偶猫' FontSize='10'/></StackPanel></StackPanel></RadioButton></UniformGrid>
      <Viewbox Width='260' Height='165'><Grid Width='300' Height='190'><Image x:Name='CatSprite' Width='285' Height='180' Stretch='Uniform' HorizontalAlignment='Center' VerticalAlignment='Bottom' RenderTransformOrigin='0.5,0.9'/><TextBlock x:Name='SleepZ' Text='z z' FontSize='17' Foreground='#B5A38F' HorizontalAlignment='Right' VerticalAlignment='Top' Margin='0,4,8,0' Visibility='Collapsed'/></Grid></Viewbox>
      <TextBlock x:Name='Status' Text='准备好就出发吧' HorizontalAlignment='Center' FontSize='15'/>
     </StackPanel>
@@ -206,7 +259,7 @@ namespace StudyCat {
    Background = new SolidColorBrush(Color.FromRgb(255,250,243)); Foreground = new SolidColorBrush(Color.FromRgb(91,73,63));
    FontFamily = new FontFamily("Microsoft YaHei UI"); FontSize = 13; WindowStartupLocation = WindowStartupLocation.CenterScreen;
    Grid grid = (Grid)System.Windows.Markup.XamlReader.Parse(Layout); Content = grid;
-   Icon = CatBrand.Image(); ((Image)grid.FindName("TitleIcon")).Source = Icon;
+   titleIcon=(Image)grid.FindName("TitleIcon");
    ((Grid)grid.FindName("TitleBar")).MouseLeftButtonDown += delegate(object sender, System.Windows.Input.MouseButtonEventArgs e) { if(e.ClickCount==2) WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized; else if(e.LeftButton==System.Windows.Input.MouseButtonState.Pressed) DragMove(); };
    ((Button)grid.FindName("Minimize")).Click += delegate { WindowState = WindowState.Minimized; };
    ((Button)grid.FindName("Maximize")).Click += delegate { WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized; };
@@ -214,6 +267,12 @@ namespace StudyCat {
    status = (TextBlock)grid.FindName("Status"); today = (TextBlock)grid.FindName("Today"); split = (TextBlock)grid.FindName("Split"); session = (TextBlock)grid.FindName("Session"); note = (TextBlock)grid.FindName("Note");
    start = (Button)grid.FindName("Start"); pin = (Button)grid.FindName("Pin"); readMode = (RadioButton)grid.FindName("ReadMode"); videoMode = (RadioButton)grid.FindName("VideoMode"); thresholdPanel = (System.Windows.Controls.Primitives.UniformGrid)grid.FindName("ThresholdPanel"); history = (ListBox)grid.FindName("History");
    catAnimation = new CatAnimation(grid);
+   petCalico=(RadioButton)grid.FindName("PetCalico"); petRagdoll=(RadioButton)grid.FindName("PetRagdoll");
+   ((Image)grid.FindName("CalicoThumb")).Source=CalicoAssets.Frame("calico",0); ((Image)grid.FindName("RagdollThumb")).Source=CalicoAssets.Frame("ragdoll",0);
+   data.PetId=CalicoAssets.NormalizePet(data.PetId); catAnimation.SetPet(data.PetId); Icon=CalicoAssets.Frame(data.PetId,0); titleIcon.Source=Icon;
+   if(data.PetId=="ragdoll") petRagdoll.IsChecked=true; else petCalico.IsChecked=true;
+   RoutedEventHandler petChanged=delegate(object sender,RoutedEventArgs e) { SelectPet(((RadioButton)sender).Tag.ToString()); };
+   petCalico.Checked+=petChanged; petRagdoll.Checked+=petChanged;
    if (!new int[] {60,90,120,180}.Contains(data.IdleSeconds)) data.IdleSeconds = 90;
    ((RadioButton)grid.FindName("Idle" + data.IdleSeconds)).IsChecked = true;
    start.Click += delegate { ToggleLearning(); };
@@ -242,6 +301,14 @@ namespace StudyCat {
    dirty = true; Tick(); Save(); RefreshHistory();
   }
   public void RestoreMainWindow() { Show(); WindowState = WindowState.Normal; Activate(); }
+  public void SelectPet(string pet) {
+   pet=CalicoAssets.NormalizePet(pet);
+   // Pet selection changes presentation only; retain the entire timing session.
+   Counter.Data.PetId=pet; catAnimation.SetPet(pet); Icon=CalicoAssets.Frame(pet,0); titleIcon.Source=Icon;
+   if(Companion!=null) Companion.SetPet(pet);
+   if(pet=="ragdoll") petRagdoll.IsChecked=true; else petCalico.IsChecked=true;
+   dirty=true; Save();
+  }
   public void RememberCatPosition(double left, double top) {
    Counter.Data.CatLeft = left; Counter.Data.CatTop = top; dirty = true; Save();
   }
@@ -314,12 +381,14 @@ namespace StudyCat {
   bool sleepRight, initialized;
   int idlePose;
   bool rolling;
+  public string PetId { get; private set; }
   public bool IsSleeping { get; private set; }
   public int RollCount { get; private set; }
   public int FrameIndex { get; private set; }
   public CatAnimation(FrameworkElement root) {
    sprite = (Image)root.FindName("CatSprite"); z = (FrameworkElement)root.FindName("SleepZ");
    var transforms = new TransformGroup(); transforms.Children.Add(breath); transforms.Children.Add(rotation); sprite.RenderTransform = transforms;
+   PetId="calico";
    SetSleeping(false);
   }
   public void SetSleeping(bool value) {
@@ -338,12 +407,16 @@ namespace StudyCat {
     actionStarted=DateTime.UtcNow; actionEnds=actionStarted.AddSeconds(4); idlePose=9;
    }
   }
-  void SetFrame(int index) { if(sprite.Source!=null && FrameIndex==index) return; FrameIndex=index; sprite.Source=CalicoAssets.Frame(index); }
+  void SetFrame(int index) { if(sprite.Source!=null && FrameIndex==index) return; FrameIndex=index; sprite.Source=CalicoAssets.Frame(PetId,index); }
+  public void SetPet(string pet) {
+   pet=CalicoAssets.NormalizePet(pet); if(PetId==pet && sprite.Source!=null) return;
+   bool sleeping=IsSleeping; PetId=pet; sprite.Source=null; initialized=false; SetSleeping(sleeping);
+  }
   public void PreviewPose(int index) { SetFrame(index); }
   public void ReactToPetting() {
    DateTime now=DateTime.UtcNow; actionStarted=now; actionEnds=now.AddSeconds(2.5);
    if(IsSleeping) SetFrame(10);
-   else {idlePose=2;SetFrame(2);}
+   else {idlePose=PetId=="ragdoll"?3:2;SetFrame(idlePose);}
   }
   public void Advance() {
    AdvanceAt(DateTime.UtcNow);
@@ -352,13 +425,13 @@ namespace StudyCat {
    if(rolling) {
     double age=(now-actionStarted).TotalSeconds;
     if(age<0.7) SetFrame(sleepRight?7:4);
-    else if(age<2.7) SetFrame(6);
+    else if(age<(PetId=="ragdoll"?3.6:2.7)) SetFrame(6);
     else { sleepRight=!sleepRight; rolling=false; SetFrame(sleepRight?7:4); nextAction=now.AddSeconds(random.Next(12,23)); }
     return;
    }
    if(IsSleeping) {
     if(now<actionEnds) { SetFrame(10); return; }
-    if(now>=nextAction) { actionEnds=now.AddSeconds(1.6); nextAction=now.AddSeconds(random.Next(14,28)); SetFrame(10); return; }
+    if(now>=nextAction) { actionEnds=now.AddSeconds(PetId=="ragdoll"?2.5:1.6); nextAction=now.AddSeconds(random.Next(14,28)); SetFrame(10); return; }
     SetFrame(sleepRight?7:(now.Second%10<5?4:5)); return;
    }
    if(now<actionEnds) {
@@ -381,11 +454,12 @@ namespace StudyCat {
  public class FloatingCatWindow : Window {
   AppWindow main;
   TextBlock time, label;
-  MenuItem pause;
+  MenuItem pause,petMenu;
   bool shuttingDown;
   CatAnimation catAnimation;
   public bool IsSleeping { get { return catAnimation.IsSleeping; } }
   public int RollCount { get { return catAnimation.RollCount; } }
+  public string PetId { get { return catAnimation.PetId; } }
   public int PoseIndex { get { return catAnimation.FrameIndex; } }
   public void PreviewPose(int index) { catAnimation.PreviewPose(index); }
   public void AdvanceAnimationAt(DateTime now) { catAnimation.AdvanceAt(now); }
@@ -405,13 +479,14 @@ namespace StudyCat {
    var panel = (StackPanel)System.Windows.Markup.XamlReader.Parse(markup); Content = panel;
    time = (TextBlock)panel.FindName("Time"); label = (TextBlock)panel.FindName("Label");
    catAnimation = new CatAnimation(panel);
+   catAnimation.SetPet(main.Counter.Data.PetId);
    ToolTip = "拖动小猫调整位置 · 双击打开主界面 · 右键暂停或结束";
    var menu = new ContextMenu();
    pause = new MenuItem { Header = "暂停学习" }; pause.Click += delegate { main.ToggleLearning(); };
    var dashboard = new MenuItem { Header = "打开主界面" }; dashboard.Click += delegate { main.RestoreMainWindow(); };
-   var pet = new MenuItem { Header = "摸摸小花" }; pet.Click += delegate { catAnimation.ReactToPetting(); };
+   petMenu = new MenuItem { Header = "摸摸"+CalicoAssets.PetName(main.Counter.Data.PetId) }; petMenu.Click += delegate { catAnimation.ReactToPetting(); };
    var finish = new MenuItem { Header = "结束本次学习" }; finish.Click += delegate { main.FinishLearning(); };
-   menu.Items.Add(pause); menu.Items.Add(pet); menu.Items.Add(dashboard); menu.Items.Add(new Separator()); menu.Items.Add(finish); ContextMenu = menu;
+   menu.Items.Add(pause); menu.Items.Add(petMenu); menu.Items.Add(dashboard); menu.Items.Add(new Separator()); menu.Items.Add(finish); ContextMenu = menu;
    MouseLeftButtonDown += delegate(object sender, System.Windows.Input.MouseButtonEventArgs e) {
     if (e.ClickCount == 2) { main.RestoreMainWindow(); e.Handled = true; return; }
     if (e.LeftButton == System.Windows.Input.MouseButtonState.Pressed) {
@@ -436,6 +511,7 @@ namespace StudyCat {
    pause.Header = running ? "暂停学习" : "继续学习";
   }
   public void RollOver() { catAnimation.RollOver(); }
+  public void SetPet(string pet) { catAnimation.SetPet(pet); petMenu.Header="摸摸"+CalicoAssets.PetName(pet); }
   public void Shutdown() { shuttingDown = true; Close(); }
   public void Snapshot(string path) {
    UpdateLayout(); var bitmap = new RenderTargetBitmap((int)Width,(int)Height,96,96,PixelFormats.Pbgra32); bitmap.Render(this);
@@ -482,7 +558,11 @@ namespace StudyCat {
    Assert(mixed.SessionSeconds==600 && mixed.SessionDeducted==0,"video has no idle penalty");
    mixed.Video=false; mixed.Advance(t.AddSeconds(600),t.AddSeconds(604),0,true); mixed.Advance(t.AddSeconds(604),t.AddSeconds(605),91,true);
    Assert(mixed.SessionSeconds==304 && mixed.Data.Days[0].Video==304 && mixed.Data.Days[0].Reading==0,"deduct latest credits across modes");
-   return "PASS: 21 timing, idle deduction, persistence and desktop isolation checks";
+   using(var reader=new StringReader("<Journal><IdleSeconds>90</IdleSeconds></Journal>")) {
+    var old=(Journal)serializer.Deserialize(reader); Assert(old.PetId=="calico","older records default to existing calico");
+   }
+   var selection=new Journal {PetId="ragdoll"}; using(var s=new MemoryStream()) { serializer.Serialize(s,selection);s.Position=0;var loaded=(Journal)serializer.Deserialize(s);Assert(loaded.PetId=="ragdoll" && CalicoAssets.NormalizePet("unknown")=="calico","pet persistence and unknown pet fallback"); }
+   return "PASS: 23 timing, idle deduction, persistence, pet selection and desktop isolation checks";
   }
  }
 }

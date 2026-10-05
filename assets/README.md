@@ -1,6 +1,6 @@
 # 三花猫“小花”素材
 
-`calico-atlas.png` 是当前程序使用的透明背景动作图集，由内置 `imagegen` 工具生成并做过一次边缘清理编辑。程序按姿态裁切，在运行时缓存，并把图集作为 `StudyCat.CalicoAtlas` 资源嵌入 `StudyCat-Calico.exe`。
+`calico-atlas.png` 是三花猫使用的透明背景动作图集，由内置 `imagegen` 工具生成并做过一次边缘清理编辑。程序按姿态裁切，在运行时缓存，并把图集作为 `StudyCat.CalicoAtlas` 资源嵌入 `StudyCat-Pets.exe`。新增布偶猫的素材及提示词见 [RAGDOLL.md](RAGDOLL.md)，两只猫可在主界面切换。
 
 12 个姿态按行排列：坐着、闭眼眨眼、歪头、舔爪；左侧蜷睡、放松蜷睡、翻肚皮、右侧蜷睡；伸懒腰、打哈欠、睡梦伸爪、趴在书边。
 

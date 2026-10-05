@@ -33,6 +33,16 @@ try {
         if (-not $window.Counter.Running) { throw 'Start button failed.' }
         $cat = $window.Companion
         if (-not $cat.IsVisible -or -not $cat.Topmost -or $cat.Owner) { throw 'Independent floating cat did not appear.' }
+        $sessionBeforePetChange = $window.Counter.SessionSeconds
+        $sleepBeforePetChange = $cat.IsSleeping
+        $grid.FindName('PetRagdoll').IsChecked = $true
+        if ($window.Counter.Data.PetId -ne 'ragdoll' -or $cat.PetId -ne 'ragdoll') { throw 'Pet selection did not update both windows.' }
+        if ($window.Counter.SessionSeconds -ne $sessionBeforePetChange -or -not $window.Counter.Running) { throw 'Changing pets altered session timing.' }
+        if ($cat.IsSleeping -ne $sleepBeforePetChange) { throw 'Changing pets altered focus animation state.' }
+        $savedPet = ([xml](Get-Content -LiteralPath (Join-Path $dataFolder 'study-data.xml') -Raw)).Journal.PetId
+        if ($savedPet -ne 'ragdoll') { throw 'Pet choice was not persisted.' }
+        $grid.FindName('PetCalico').IsChecked = $true
+        if ($cat.PetId -ne 'calico' -or $window.Counter.SessionSeconds -ne $sessionBeforePetChange) { throw 'Switching back changed timing or failed.' }
         $window.WindowState = 'Minimized'
         $window.Dispatcher.Invoke([Action]{}, [System.Windows.Threading.DispatcherPriority]::ApplicationIdle)
         if (-not $cat.IsVisible) { throw 'Minimizing dashboard hides cat.' }
@@ -67,6 +77,22 @@ try {
         }
         $cat.PreviewPose(4)
         $cat.Snapshot((Join-Path (Split-Path $PreviewPath) 'floating-cat-preview.png'))
+        $pausedSeconds = $window.Counter.SessionSeconds
+        $grid.FindName('PetRagdoll').IsChecked = $true
+        if ($window.Counter.Running -or $window.Counter.SessionSeconds -ne $pausedSeconds) { throw 'Pet switching resumed paused session.' }
+        $cat.UpdateDisplay(125, $false, $false, $true)
+        $cat.RollOver()
+        $cat.AdvanceAnimationAt([DateTime]::UtcNow.AddSeconds(1.2))
+        if ($cat.PoseIndex -ne 6) { throw 'Ragdoll belly-up pose did not appear.' }
+        $cat.AdvanceAnimationAt([DateTime]::UtcNow.AddSeconds(4.2))
+        if ($cat.PoseIndex -ne 7) { throw 'Ragdoll rollover did not settle.' }
+        for ($pose=0; $pose -lt 12; $pose++) {
+            if ([StudyCat.CalicoAssets]::Frame('ragdoll',$pose).PixelWidth -lt 30) { throw "Empty ragdoll pose $pose" }
+            $cat.PreviewPose($pose)
+            $cat.Snapshot((Join-Path (Split-Path $PreviewPath) ('ragdoll-pose-' + $pose + '-preview.png')))
+        }
+        $cat.PreviewPose(4)
+        $cat.Snapshot((Join-Path (Split-Path $PreviewPath) 'ragdoll-cat-preview.png'))
         $grid.FindName('ReadMode').IsChecked = $true
         $grid.FindName('Idle60').IsChecked = $true
         if ($window.Counter.Data.IdleSeconds -ne 60) { throw 'Idle setting failed.' }
@@ -80,7 +106,10 @@ try {
         $window.Snapshot($PreviewPath)
         $grid.FindName('CloseWindow').RaiseEvent((New-Object System.Windows.RoutedEventArgs([System.Windows.Controls.Button]::ClickEvent)))
         if ($cat.IsVisible) { throw 'Closing dashboard left cat open.' }
-        'PASS: WPF controls, native hooks, floating cat lifecycle, time synchronization, minimized dashboard, position persistence and snapshots'
+        $reopened = New-Object StudyCat.AppWindow($dataFolder)
+        if ($reopened.Counter.Data.PetId -ne 'ragdoll') { throw 'Pet selection did not survive restart.' }
+        $reopened.Close()
+        'PASS: WPF controls, native hooks, pet switching and persistence, both pet animations, floating cat lifecycle, time synchronization, minimized dashboard, position persistence and snapshots'
     } else { $window.ShowDialog() | Out-Null }
     $mutex.ReleaseMutex(); $mutex.Dispose()
 } catch {
