@@ -4,6 +4,7 @@ try {
     Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Xaml
     $references = @([System.Uri].Assembly.Location, [System.Linq.Enumerable].Assembly.Location, [System.Xml.XmlDocument].Assembly.Location, [System.Xaml.XamlReader].Assembly.Location, [System.Windows.Threading.Dispatcher].Assembly.Location, [System.Windows.Media.Brush].Assembly.Location, [System.Windows.Window].Assembly.Location)
     Add-Type -TypeDefinition ([System.IO.File]::ReadAllText((Join-Path $PSScriptRoot 'StudyCat.cs'))) -ReferencedAssemblies $references
+    [StudyCat.CalicoAssets]::AssetDirectory = $PSScriptRoot
     if ($ExportIcon) { [StudyCat.CatBrand]::ExportIcon((Join-Path $PSScriptRoot 'cat.ico')); exit 0 }
     if ($SelfTest) { [StudyCat.Checks]::Run(); exit 0 }
     $mutexName = 'Local\StudyCatPersonalDesktop'
@@ -55,6 +56,16 @@ try {
         if (-not $cat.IsSleeping) { throw 'Focused cat should sleep.' }
         $cat.RollOver()
         if ($cat.RollCount -ne ($previousRolls + 1)) { throw 'Sleeping rollover did not start.' }
+        $cat.AdvanceAnimationAt([DateTime]::UtcNow.AddSeconds(1.2))
+        if ($cat.PoseIndex -ne 6) { throw 'Rollover must pass through belly-up pose.' }
+        $cat.AdvanceAnimationAt([DateTime]::UtcNow.AddSeconds(4))
+        if ($cat.PoseIndex -ne 7) { throw 'Rollover must settle on other side.' }
+        for ($pose = 0; $pose -lt 12; $pose++) {
+            if ([StudyCat.CalicoAssets]::Frame($pose).PixelWidth -lt 30) { throw "Empty cat pose $pose" }
+            $cat.PreviewPose($pose)
+            $cat.Snapshot((Join-Path (Split-Path $PreviewPath) ('calico-pose-' + $pose + '-preview.png')))
+        }
+        $cat.PreviewPose(4)
         $cat.Snapshot((Join-Path (Split-Path $PreviewPath) 'floating-cat-preview.png'))
         $grid.FindName('ReadMode').IsChecked = $true
         $grid.FindName('Idle60').IsChecked = $true

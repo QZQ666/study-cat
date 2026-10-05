@@ -1,2 +1,2 @@
 @echo off
-start "" "%~dp0StudyCat.exe"
+start "" "%~dp0StudyCat-Calico.exe"

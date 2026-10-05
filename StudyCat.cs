@@ -14,19 +14,41 @@ using System.Windows.Shell;
 using System.Windows.Media.Animation;
 
 namespace StudyCat {
+ public static class CalicoAssets {
+  public static string AssetDirectory = Directory.GetCurrentDirectory();
+  static BitmapSource[] frames;
+  public static BitmapSource Frame(int index) {
+   if (frames == null) Load();
+   if (index<0 || index>=12) throw new ArgumentOutOfRangeException("index");
+   return frames[index];
+  }
+  static void Load() {
+   Stream stream = typeof(CalicoAssets).Assembly.GetManifestResourceStream("StudyCat.CalicoAtlas");
+   if (stream == null) stream = File.OpenRead(Path.Combine(AssetDirectory,"assets","calico-atlas.png"));
+   BitmapImage atlas = new BitmapImage();
+   using (stream) { atlas.BeginInit(); atlas.CacheOption = BitmapCacheOption.OnLoad; atlas.StreamSource = stream; atlas.EndInit(); atlas.Freeze(); }
+   // The illustrated sheet has taller sitting/stretching rows and a shorter sleeping row.
+   int[] rows = {0,(int)(atlas.PixelHeight*0.38),(int)(atlas.PixelHeight*0.652),atlas.PixelHeight};
+   frames = new BitmapSource[12];
+   for(int i=0;i<12;i++) {
+    int col=i%4,row=i/4,x=col*atlas.PixelWidth/4,right=(col+1)*atlas.PixelWidth/4;
+    int top=rows[row],bottom=rows[row+1];
+    if(row==1 && col==0) bottom=(int)(atlas.PixelHeight*0.625);
+    if(row==2 && col==0) top=(int)(atlas.PixelHeight*0.625);
+    var tile = new CroppedBitmap(atlas,new Int32Rect(x,top,right-x,bottom-top));
+    var rgba = new FormatConvertedBitmap(tile,PixelFormats.Bgra32,null,0);
+    int width=rgba.PixelWidth,height=rgba.PixelHeight,stride=width*4; var pixels=new byte[stride*height]; rgba.CopyPixels(pixels,stride,0);
+    int minX=width,minY=height,maxX=0,maxY=0;
+    for(int py=0;py<height;py++) for(int px=0;px<width;px++) if(pixels[py*stride+px*4+3]>24) {minX=Math.Min(minX,px); minY=Math.Min(minY,py); maxX=Math.Max(maxX,px); maxY=Math.Max(maxY,py);}
+    if(minX>maxX) throw new InvalidDataException("Calico pose is empty: "+i);
+    minX=Math.Max(0,minX-4);minY=Math.Max(0,minY-4);maxX=Math.Min(width-1,maxX+4);maxY=Math.Min(height-1,maxY+4);
+    var frame = new CroppedBitmap(tile,new Int32Rect(minX,minY,maxX-minX+1,maxY-minY+1)); frame.Freeze(); frames[i]=frame;
+   }
+  }
+ }
  public static class CatBrand {
   public static ImageSource Image() {
-   var image = (DrawingImage)System.Windows.Markup.XamlReader.Parse(@"<DrawingImage xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'><DrawingImage.Drawing><DrawingGroup>
-    <GeometryDrawing Brush='#FFF4E5' Geometry='M 20,3 L 80,3 Q 97,3 97,20 L 97,80 Q 97,97 80,97 L 20,97 Q 3,97 3,80 L 3,20 Q 3,3 20,3 Z'/>
-    <GeometryDrawing Brush='#E7AF76' Geometry='M 22,44 L 18,17 L 39,30 Q 50,25 61,30 L 82,17 L 78,44 C 94,88 6,88 22,44 Z'/>
-    <GeometryDrawing Brush='#E4A09A' Geometry='M 24,32 L 23,24 L 34,32 Z M 66,32 L 77,24 L 76,34 Z'/>
-    <GeometryDrawing Brush='#C48A57' Geometry='M 40,30 L 43,42 L 47,41 L 44,29 Z M 54,29 L 53,42 L 57,42 L 59,30 Z'/>
-    <GeometryDrawing Brush='#5B493F' Geometry='M 34,49 A 3,4 0 1 1 33.99,49 Z M 67,49 A 3,4 0 1 1 66.99,49 Z'/>
-    <GeometryDrawing Brush='#E89991' Geometry='M 26,60 A 7,3 0 1 1 25.99,60 Z M 75,60 A 7,3 0 1 1 74.99,60 Z'/>
-    <GeometryDrawing Brush='#A97065' Geometry='M 45,58 Q 50,54 55,58 L 50,63 Z'/>
-    <GeometryDrawing Geometry='M 50,63 Q 45,72 40,66 M 50,63 Q 55,72 60,66'><GeometryDrawing.Pen><Pen Brush='#855C48' Thickness='2'/></GeometryDrawing.Pen></GeometryDrawing>
-   </DrawingGroup></DrawingImage.Drawing></DrawingImage>");
-   image.Freeze(); return image;
+   return CalicoAssets.Frame(0);
   }
   public static void ExportIcon(string path) {
    var sizes = new int[] {32,64,256}; var frames = new List<byte[]>();
@@ -147,7 +169,6 @@ namespace StudyCat {
   RadioButton readMode, videoMode;
   System.Windows.Controls.Primitives.UniformGrid thresholdPanel;
   ListBox history;
-  FrameworkElement eyes, sleepy;
   CatAnimation catAnimation;
   DateTime nextRoll;
   Random animationRandom = new Random();
@@ -160,37 +181,7 @@ namespace StudyCat {
    <Grid x:Name='TitleBar' Background='Transparent'><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width='Auto'/></Grid.ColumnDefinitions><StackPanel Orientation='Horizontal' VerticalAlignment='Center'><Image x:Name='TitleIcon' Width='36' Height='36' Margin='0,0,9,0'/><StackPanel><TextBlock Text='小猫陪学' FontSize='20' FontWeight='Bold'/><TextBlock Text='陪你慢慢积累每一点专注' FontSize='10' Foreground='#A08B7D' Margin='0,3,0,0'/></StackPanel></StackPanel><StackPanel Grid.Column='1' Orientation='Horizontal' VerticalAlignment='Center'><Button x:Name='Pin' Content='置顶' Padding='9,8' FontSize='11'/><Button x:Name='Minimize' Content='—' Padding='9,5' FontSize='15' ToolTip='最小化'/><Button x:Name='Maximize' Content='□' Padding='9,5' FontSize='15' ToolTip='最大化或还原'/><Button x:Name='CloseWindow' Content='×' Padding='10,3' FontSize='19' Background='#F5DFD7' ToolTip='关闭并结束学习'/></StackPanel></Grid>
    <Border Grid.Row='1' Background='#F5EDE4' CornerRadius='26' Margin='0,20,0,14' Padding='8,8,8,16'>
     <StackPanel>
-     <Viewbox Width='240' Height='145'><Grid Width='300' Height='180'><Canvas x:Name='AwakeCat' Width='300' Height='180'>
-      <Ellipse Canvas.Left='62' Canvas.Top='152' Width='180' Height='15' Fill='#E4D7C8'/>
-      <Path Data='M 222,138 C 280,153 277,89 249,109' Stroke='#DDA56E' StrokeThickness='18' StrokeStartLineCap='Round' StrokeEndLineCap='Round'/>
-      <Ellipse Canvas.Left='92' Canvas.Top='90' Width='132' Height='75' Fill='#EAB984'/>
-      <Path Data='M 77,70 L 74,20 L 114,43 M 186,43 L 226,20 L 223,73' Fill='#EAB984' Stroke='#EAB984' StrokeThickness='8' StrokeLineJoin='Round'/>
-      <Path Data='M 84,49 L 84,31 L 102,45 M 197,45 L 217,31 L 214,52' Fill='#E3A09A'/>
-      <Ellipse Canvas.Left='73' Canvas.Top='40' Width='154' Height='108' Fill='#EAB984'/>
-      <Path Data='M 135,43 L 140,58 M 153,42 L 153,60 M 170,44 L 166,58' Stroke='#C98C57' StrokeThickness='6' StrokeStartLineCap='Round' StrokeEndLineCap='Round'/>
-      <Canvas x:Name='Eyes'><Ellipse Canvas.Left='112' Canvas.Top='85' Width='11' Height='16' Fill='#5B493F'/><Ellipse Canvas.Left='180' Canvas.Top='85' Width='11' Height='16' Fill='#5B493F'/><Ellipse Canvas.Left='114' Canvas.Top='86' Width='3' Height='4' Fill='White'/><Ellipse Canvas.Left='182' Canvas.Top='86' Width='3' Height='4' Fill='White'/></Canvas>
-      <Canvas x:Name='Sleepy' Visibility='Collapsed'><Path Data='M 109,96 Q 117,85 125,96 M 178,96 Q 186,85 194,96' Stroke='#5B493F' StrokeThickness='3' StrokeStartLineCap='Round' StrokeEndLineCap='Round'/></Canvas>
-      <Ellipse Canvas.Left='95' Canvas.Top='103' Width='22' Height='10' Fill='#EBA19A'/><Ellipse Canvas.Left='187' Canvas.Top='103' Width='22' Height='10' Fill='#EBA19A'/>
-      <Path Data='M 145,104 Q 151,99 157,104 L 151,110 Z' Fill='#AD786C'/><Path Data='M 151,110 Q 144,122 137,115 M 151,110 Q 158,122 165,115' Stroke='#7B5946' StrokeThickness='2' Fill='Transparent'/>
-      <Path Data='M 78,104 L 103,108 M 79,119 L 103,116 M 201,108 L 226,104 M 201,116 L 225,121' Stroke='#B6835B' StrokeThickness='2'/>
-      <Path Data='M 103,148 L 148,142 L 151,164 L 105,167 Z M 151,164 L 154,142 L 201,148 L 198,167 Z' Fill='#FFFDF8' Stroke='#CFBFAE' StrokeThickness='2'/>
-      <Ellipse Canvas.Left='96' Canvas.Top='136' Width='32' Height='17' Fill='#F3C99C'/><Ellipse Canvas.Left='179' Canvas.Top='136' Width='32' Height='17' Fill='#F3C99C'/>
-     </Canvas><Canvas x:Name='SleepingCat' Width='300' Height='180' Visibility='Collapsed'>
-      <Ellipse Canvas.Left='43' Canvas.Top='137' Width='209' Height='32' Fill='#E3DCCF'/><Ellipse Canvas.Left='44' Canvas.Top='134' Width='208' Height='27' Fill='#E9E7DA'/>
-      <Canvas x:Name='SleepingBody' Canvas.Left='39' Canvas.Top='27' Width='222' Height='122' RenderTransformOrigin='0.5,0.65'>
-       <Ellipse Canvas.Left='62' Canvas.Top='48' Width='132' Height='73' Fill='#E9B47D'/>
-       <Path Data='M 139,97 C 207,121 211,63 183,61 C 156,59 147,93 169,93' Stroke='#D49A64' StrokeThickness='17' StrokeStartLineCap='Round' StrokeEndLineCap='Round'/>
-       <Path Data='M 21,58 L 27,24 L 58,47 M 82,46 L 109,28 L 112,67' Fill='#E9B47D' Stroke='#E9B47D' StrokeThickness='5' StrokeLineJoin='Round'/>
-       <Path Data='M 30,43 L 33,33 L 45,44 M 91,48 L 105,36 L 106,52' Fill='#E4A09A'/>
-       <Ellipse Canvas.Left='15' Canvas.Top='46' Width='107' Height='73' Fill='#F0BF8A'/>
-       <Path Data='M 54,47 L 57,59 M 69,47 L 68,60 M 84,49 L 79,61' Stroke='#CA905C' StrokeThickness='5' StrokeStartLineCap='Round' StrokeEndLineCap='Round'/>
-       <Path Data='M 37,79 Q 43,86 51,80 M 86,80 Q 93,87 100,80' Stroke='#785442' StrokeThickness='2.5' StrokeStartLineCap='Round' StrokeEndLineCap='Round'/>
-       <Ellipse Canvas.Left='28' Canvas.Top='88' Width='18' Height='8' Fill='#E8A299'/><Ellipse Canvas.Left='91' Canvas.Top='88' Width='18' Height='8' Fill='#E8A299'/>
-       <Path Data='M 63,88 Q 69,84 75,88 L 69,94 Z' Fill='#AD786C'/><Path Data='M 69,94 Q 64,101 59,97 M 69,94 Q 75,102 80,97' Stroke='#946A53' StrokeThickness='1.7'/>
-       <Ellipse Canvas.Left='54' Canvas.Top='105' Width='45' Height='15' Fill='#F5CCA0'/>
-      </Canvas>
-      <TextBlock x:Name='SleepZ' Canvas.Left='235' Canvas.Top='24' Text='z' FontSize='24' Foreground='#B5A38F' FontWeight='SemiBold'/><TextBlock Canvas.Left='251' Canvas.Top='5' Text='z' FontSize='16' Foreground='#C9BBA8'/>
-     </Canvas></Grid></Viewbox>
+     <Viewbox Width='260' Height='165'><Grid Width='300' Height='190'><Image x:Name='CatSprite' Width='285' Height='180' Stretch='Uniform' HorizontalAlignment='Center' VerticalAlignment='Bottom' RenderTransformOrigin='0.5,0.9'/><TextBlock x:Name='SleepZ' Text='z z' FontSize='17' Foreground='#B5A38F' HorizontalAlignment='Right' VerticalAlignment='Top' Margin='0,4,8,0' Visibility='Collapsed'/></Grid></Viewbox>
      <TextBlock x:Name='Status' Text='准备好就出发吧' HorizontalAlignment='Center' FontSize='15'/>
     </StackPanel>
    </Border>
@@ -221,7 +212,7 @@ namespace StudyCat {
    ((Button)grid.FindName("Maximize")).Click += delegate { WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized; };
    ((Button)grid.FindName("CloseWindow")).Click += delegate { Close(); };
    status = (TextBlock)grid.FindName("Status"); today = (TextBlock)grid.FindName("Today"); split = (TextBlock)grid.FindName("Split"); session = (TextBlock)grid.FindName("Session"); note = (TextBlock)grid.FindName("Note");
-   start = (Button)grid.FindName("Start"); pin = (Button)grid.FindName("Pin"); readMode = (RadioButton)grid.FindName("ReadMode"); videoMode = (RadioButton)grid.FindName("VideoMode"); thresholdPanel = (System.Windows.Controls.Primitives.UniformGrid)grid.FindName("ThresholdPanel"); history = (ListBox)grid.FindName("History"); eyes = (FrameworkElement)grid.FindName("Eyes"); sleepy = (FrameworkElement)grid.FindName("Sleepy");
+   start = (Button)grid.FindName("Start"); pin = (Button)grid.FindName("Pin"); readMode = (RadioButton)grid.FindName("ReadMode"); videoMode = (RadioButton)grid.FindName("VideoMode"); thresholdPanel = (System.Windows.Controls.Primitives.UniformGrid)grid.FindName("ThresholdPanel"); history = (ListBox)grid.FindName("History");
    catAnimation = new CatAnimation(grid);
    if (!new int[] {60,90,120,180}.Contains(data.IdleSeconds)) data.IdleSeconds = 90;
    ((RadioButton)grid.FindName("Idle" + data.IdleSeconds)).IsChecked = true;
@@ -297,10 +288,10 @@ namespace StudyCat {
    today.Text = Duration(r+v); split.Text = "阅读 " + Duration(r) + "   ·   视频 " + Duration(v); session.Text = "本次学习  " + Duration(Counter.SessionSeconds); status.Text = Counter.State;
    start.Content = Counter.Running ? "暂停一下" : Counter.SessionStarted == default(DateTime) ? "开始学习" : "继续学习";
    bool resting = !Counter.Running || Counter.Locked || !Counter.DisplayOn || (!Counter.Video && idle >= Counter.Data.IdleSeconds) || !ok;
-   bool blink = ticks % 14 == 0; eyes.Visibility = blink ? Visibility.Collapsed : Visibility.Visible; sleepy.Visibility = blink ? Visibility.Visible : Visibility.Collapsed;
+   bool blink = ticks % 14 == 0;
    bool focused = !resting;
    if (focused && !catAnimation.IsSleeping) nextRoll = DateTime.UtcNow.AddSeconds(animationRandom.Next(45,91));
-   catAnimation.SetSleeping(focused);
+   catAnimation.SetSleeping(focused); catAnimation.Advance();
    if (Companion != null) Companion.UpdateDisplay(Counter.SessionSeconds, resting, blink, Counter.Running);
    if (focused && DateTime.UtcNow >= nextRoll) { catAnimation.RollOver(); if(Companion != null) Companion.RollOver(); nextRoll = DateTime.UtcNow.AddSeconds(animationRandom.Next(45,91)); }
    if (saveError == null) note.Text = Counter.Video ? "视频模式持续计时；去玩手机时记得点暂停。关屏、锁屏会自动暂停。" : "无操作满 " + Counter.Data.IdleSeconds + " 秒后暂停，并扣除本次最多 5 分钟；每次离开只扣一次。";
@@ -314,73 +305,113 @@ namespace StudyCat {
   }
  }
  public class CatAnimation {
-  FrameworkElement awake, sleeping, body, z;
-  ScaleTransform breath = new ScaleTransform(1,1), mirror = new ScaleTransform(1,1);
+  Image sprite;
+  FrameworkElement z;
+  ScaleTransform breath = new ScaleTransform(1,1);
   RotateTransform rotation = new RotateTransform(0);
-  bool mirrored;
+  Random random = new Random();
+  DateTime actionStarted, actionEnds, nextAction, blinkEnds, nextBlink;
+  bool sleepRight, initialized;
+  int idlePose;
+  bool rolling;
   public bool IsSleeping { get; private set; }
   public int RollCount { get; private set; }
+  public int FrameIndex { get; private set; }
   public CatAnimation(FrameworkElement root) {
-   awake = (FrameworkElement)root.FindName("AwakeCat"); sleeping = (FrameworkElement)root.FindName("SleepingCat"); body = (FrameworkElement)root.FindName("SleepingBody"); z = (FrameworkElement)root.FindName("SleepZ");
-   var transforms = new TransformGroup(); transforms.Children.Add(breath); transforms.Children.Add(mirror); transforms.Children.Add(rotation); body.RenderTransform = transforms;
+   sprite = (Image)root.FindName("CatSprite"); z = (FrameworkElement)root.FindName("SleepZ");
+   var transforms = new TransformGroup(); transforms.Children.Add(breath); transforms.Children.Add(rotation); sprite.RenderTransform = transforms;
+   SetSleeping(false);
   }
   public void SetSleeping(bool value) {
-   if (value == IsSleeping) return;
-   IsSleeping = value; awake.Visibility = value ? Visibility.Collapsed : Visibility.Visible; sleeping.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
+   if (initialized && value == IsSleeping) return;
+   initialized = true; IsSleeping = value; rolling=false; actionEnds=DateTime.MinValue; sleepRight=false;
+   nextAction = DateTime.UtcNow.AddSeconds(random.Next(9,18)); nextBlink=DateTime.UtcNow.AddSeconds(5);
+   z.Visibility=value?Visibility.Visible:Visibility.Collapsed; SetFrame(value?4:0);
    if (value) {
-    var breathing = new DoubleAnimation(1,1.035,TimeSpan.FromSeconds(2.4)) {AutoReverse=true,RepeatBehavior=RepeatBehavior.Forever};
+    var breathing = new DoubleAnimation(1,1.025,TimeSpan.FromSeconds(2.8)) {AutoReverse=true,RepeatBehavior=RepeatBehavior.Forever};
     breath.BeginAnimation(ScaleTransform.ScaleYProperty,breathing);
     var floating = new DoubleAnimation(0.25,0.85,TimeSpan.FromSeconds(2.4)) {AutoReverse=true,RepeatBehavior=RepeatBehavior.Forever}; z.BeginAnimation(UIElement.OpacityProperty,floating);
    } else {
-    breath.BeginAnimation(ScaleTransform.ScaleYProperty,null); z.BeginAnimation(UIElement.OpacityProperty,null); rotation.BeginAnimation(RotateTransform.AngleProperty,null); mirror.BeginAnimation(ScaleTransform.ScaleXProperty,null);
-    breath.ScaleY=1; rotation.Angle=0; mirror.ScaleX=1; mirrored=false;
+    breath.BeginAnimation(ScaleTransform.ScaleYProperty,null); z.BeginAnimation(UIElement.OpacityProperty,null); rotation.BeginAnimation(RotateTransform.AngleProperty,null);
+    breath.ScaleY=1; rotation.Angle=0;
+    // Wake with a small yawn and a stretch before settling down.
+    actionStarted=DateTime.UtcNow; actionEnds=actionStarted.AddSeconds(4); idlePose=9;
    }
+  }
+  void SetFrame(int index) { if(sprite.Source!=null && FrameIndex==index) return; FrameIndex=index; sprite.Source=CalicoAssets.Frame(index); }
+  public void PreviewPose(int index) { SetFrame(index); }
+  public void ReactToPetting() {
+   DateTime now=DateTime.UtcNow; actionStarted=now; actionEnds=now.AddSeconds(2.5);
+   if(IsSleeping) SetFrame(10);
+   else {idlePose=2;SetFrame(2);}
+  }
+  public void Advance() {
+   AdvanceAt(DateTime.UtcNow);
+  }
+  public void AdvanceAt(DateTime now) {
+   if(rolling) {
+    double age=(now-actionStarted).TotalSeconds;
+    if(age<0.7) SetFrame(sleepRight?7:4);
+    else if(age<2.7) SetFrame(6);
+    else { sleepRight=!sleepRight; rolling=false; SetFrame(sleepRight?7:4); nextAction=now.AddSeconds(random.Next(12,23)); }
+    return;
+   }
+   if(IsSleeping) {
+    if(now<actionEnds) { SetFrame(10); return; }
+    if(now>=nextAction) { actionEnds=now.AddSeconds(1.6); nextAction=now.AddSeconds(random.Next(14,28)); SetFrame(10); return; }
+    SetFrame(sleepRight?7:(now.Second%10<5?4:5)); return;
+   }
+   if(now<actionEnds) {
+    if(idlePose==9) SetFrame((now-actionStarted).TotalSeconds<1.5?9:8);
+    else if(idlePose==3) SetFrame(((int)((now-actionStarted).TotalSeconds*2))%2==0?3:0);
+    else SetFrame(idlePose);
+    return;
+   }
+   if(now>=nextAction) { int[] poses={2,3,8,9,11}; idlePose=poses[random.Next(poses.Length)]; actionStarted=now; actionEnds=now.AddSeconds(idlePose==11?5:3.5); nextAction=now.AddSeconds(random.Next(10,20)); Advance(); return; }
+   if(now>=nextBlink) {blinkEnds=now.AddSeconds(0.65);nextBlink=now.AddSeconds(random.Next(4,8));}
+   SetFrame(now<blinkEnds?1:0);
   }
   public void RollOver() {
    if (!IsSleeping) return;
-   RollCount++;
-   var turning = new DoubleAnimationUsingKeyFrames();
-   turning.KeyFrames.Add(new EasingDoubleKeyFrame(0,KeyTime.FromTimeSpan(TimeSpan.Zero)));
-   turning.KeyFrames.Add(new EasingDoubleKeyFrame(-12,KeyTime.FromTimeSpan(TimeSpan.FromSeconds(0.6)),new SineEase()));
-   turning.KeyFrames.Add(new EasingDoubleKeyFrame(24,KeyTime.FromTimeSpan(TimeSpan.FromSeconds(1.5)),new SineEase()));
-   turning.KeyFrames.Add(new EasingDoubleKeyFrame(-7,KeyTime.FromTimeSpan(TimeSpan.FromSeconds(2.3)),new SineEase()));
-   turning.KeyFrames.Add(new EasingDoubleKeyFrame(0,KeyTime.FromTimeSpan(TimeSpan.FromSeconds(3)),new SineEase()));
-   rotation.BeginAnimation(RotateTransform.AngleProperty,turning);
-   double from = mirrored?-1:1; mirrored = !mirrored;
-   mirror.BeginAnimation(ScaleTransform.ScaleXProperty,new DoubleAnimation(from,-from,TimeSpan.FromSeconds(1.8)) {EasingFunction=new SineEase {EasingMode=EasingMode.EaseInOut}});
+   RollCount++; rolling=true; actionStarted=DateTime.UtcNow;
+   rotation.BeginAnimation(RotateTransform.AngleProperty,new DoubleAnimation(-4,4,TimeSpan.FromSeconds(1.2)) {AutoReverse=true,FillBehavior=FillBehavior.Stop,EasingFunction=new SineEase()});
+   Advance();
   }
  }
  public class FloatingCatWindow : Window {
   AppWindow main;
   TextBlock time, label;
-  FrameworkElement eyes, sleepy;
   MenuItem pause;
   bool shuttingDown;
   CatAnimation catAnimation;
   public bool IsSleeping { get { return catAnimation.IsSleeping; } }
   public int RollCount { get { return catAnimation.RollCount; } }
+  public int PoseIndex { get { return catAnimation.FrameIndex; } }
+  public void PreviewPose(int index) { catAnimation.PreviewPose(index); }
+  public void AdvanceAnimationAt(DateTime now) { catAnimation.AdvanceAt(now); }
   public string DisplayedTime { get { return time.Text; } }
   public FloatingCatWindow(AppWindow owner) {
    main = owner;
    Title = "小猫陪学 · 桌面小猫";
-   Width = 210; Height = 205; WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize;
+   Width = 240; Height = 228; WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize;
    AllowsTransparency = true; Background = Brushes.Transparent; Topmost = true; ShowInTaskbar = false; ShowActivated = false;
    FontFamily = new FontFamily("Microsoft YaHei UI"); Foreground = new SolidColorBrush(Color.FromRgb(91,73,63));
    // Keep this window unowned: minimizing the dashboard must not hide the cat.
    string cat = AppWindow.Layout.Substring(AppWindow.Layout.IndexOf("<Viewbox"));
    cat = cat.Substring(0,cat.IndexOf("</Viewbox>") + "</Viewbox>".Length);
-   cat = cat.Replace("Width='240' Height='145'", "Width='205' Height='125'");
+   cat = cat.Replace("Width='260' Height='165'", "Width='235' Height='148'");
    string markup = "<StackPanel xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' Background='Transparent'>" + cat +
     "<Border Background='#F9FFF9F0' BorderBrush='#E9DDCE' BorderThickness='1' CornerRadius='17' Padding='10,8' Margin='21,1,21,0'><StackPanel><TextBlock x:Name='Label' Text='本次专注' HorizontalAlignment='Center' FontSize='11' Foreground='#9B8675'/><TextBlock x:Name='Time' Text='00:00:00' HorizontalAlignment='Center' FontSize='23' FontWeight='SemiBold' Margin='0,2,0,0'/></StackPanel></Border></StackPanel>";
    var panel = (StackPanel)System.Windows.Markup.XamlReader.Parse(markup); Content = panel;
-   time = (TextBlock)panel.FindName("Time"); label = (TextBlock)panel.FindName("Label"); eyes = (FrameworkElement)panel.FindName("Eyes"); sleepy = (FrameworkElement)panel.FindName("Sleepy");
+   time = (TextBlock)panel.FindName("Time"); label = (TextBlock)panel.FindName("Label");
    catAnimation = new CatAnimation(panel);
    ToolTip = "拖动小猫调整位置 · 双击打开主界面 · 右键暂停或结束";
    var menu = new ContextMenu();
    pause = new MenuItem { Header = "暂停学习" }; pause.Click += delegate { main.ToggleLearning(); };
    var dashboard = new MenuItem { Header = "打开主界面" }; dashboard.Click += delegate { main.RestoreMainWindow(); };
+   var pet = new MenuItem { Header = "摸摸小花" }; pet.Click += delegate { catAnimation.ReactToPetting(); };
    var finish = new MenuItem { Header = "结束本次学习" }; finish.Click += delegate { main.FinishLearning(); };
-   menu.Items.Add(pause); menu.Items.Add(dashboard); menu.Items.Add(new Separator()); menu.Items.Add(finish); ContextMenu = menu;
+   menu.Items.Add(pause); menu.Items.Add(pet); menu.Items.Add(dashboard); menu.Items.Add(new Separator()); menu.Items.Add(finish); ContextMenu = menu;
    MouseLeftButtonDown += delegate(object sender, System.Windows.Input.MouseButtonEventArgs e) {
     if (e.ClickCount == 2) { main.RestoreMainWindow(); e.Handled = true; return; }
     if (e.LeftButton == System.Windows.Input.MouseButtonState.Pressed) {
@@ -401,8 +432,7 @@ namespace StudyCat {
   public void MoveTo(double left, double top) { PlaceWithinDesktop(left,top); main.RememberCatPosition(Left,Top); }
   public void UpdateDisplay(double seconds, bool resting, bool blink, bool running) {
    time.Text = AppWindow.Duration(seconds); label.Text = resting ? "本次专注 · 已暂停" : "本次专注";
-   eyes.Visibility = blink ? Visibility.Collapsed : Visibility.Visible; sleepy.Visibility = blink ? Visibility.Visible : Visibility.Collapsed;
-   catAnimation.SetSleeping(!resting);
+   catAnimation.SetSleeping(!resting); catAnimation.Advance();
    pause.Header = running ? "暂停学习" : "继续学习";
   }
   public void RollOver() { catAnimation.RollOver(); }
@@ -490,7 +520,7 @@ namespace StudyCat {
        if(window==IntPtr.Zero) System.Threading.Thread.Sleep(250);
       }
       if(window != IntPtr.Zero) { ShowWindow(window,9); SetForegroundWindow(window); }
-      else MessageBox.Show("当前桌面已有小猫进程，但窗口未响应。请在任务管理器中结束 StudyCat.exe 后重新打开。","小猫陪学");
+      else MessageBox.Show("当前桌面已有小猫进程，但窗口未响应。请在任务管理器中结束小猫陪学程序后重新打开。","小猫陪学");
       return;
      }
      var app = new Application();
